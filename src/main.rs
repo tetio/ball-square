@@ -1,4 +1,4 @@
-use bevy::{math::VectorSpace, prelude::*, scene::ron::de, state::commands};
+use bevy::{prelude::*, window::*};
 
 #[derive(Component)]
 struct Square;
@@ -6,11 +6,17 @@ struct Square;
 #[derive(Component)]
 struct Ball;
 
+#[derive(Component, Deref, DerefMut)]
+struct Velocity(Vec2);
+const WINDOW_WIDTH: f32 = 900.;
+const WINDOW_HEIGHT: f32 = 600.;
 const BACHGROUND_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
 const SQUARE_COLOR: Color = Color::srgb(0.1, 0.1, 1.0);
 const BALL_COLOR: Color = Color::srgb(0.1, 1.0, 0.2);
 const SQUARE_SPEED: f32 = 100.0;
 const BALL_DIAMETER: f32 = 32.0;
+const BALL_DIRECTION: Vec2 = Vec2::new(0.5, -0.5);
+const BALL_SPEED: f32 = 100.0;
 
 fn setup(
     mut commands: Commands,
@@ -41,6 +47,7 @@ fn setup(
             ..default()
         },
         Ball,
+        Velocity(BALL_DIRECTION.normalize() * BALL_SPEED),
     ));
 }
 
@@ -68,11 +75,32 @@ fn move_square(
     square_transform.translation.y += direction.y * SQUARE_SPEED * time.delta_secs();
 }
 
+fn apply_velocity(mut query: Query<(&mut Transform, &mut Velocity)>, time: Res<Time>) {
+    for (mut transform, mut velocity) in &mut query {
+        let x = transform.translation.x + velocity.x * time.delta_secs();
+        let y = transform.translation.y + velocity.y * time.delta_secs();
+        if x > WINDOW_WIDTH / 2. || x < -WINDOW_WIDTH / 2. {
+            velocity.x *= -1.;
+        }
+        if y > WINDOW_HEIGHT / 2. || y < -WINDOW_HEIGHT / 2. {
+            velocity.y *= -1.;
+        }
+        transform.translation.x = x.clamp(-450.0, 450.0);
+        transform.translation.y = y.clamp(-300.0, 300.0);
+    }
+}
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                resolution: WindowResolution::new(WINDOW_WIDTH, WINDOW_HEIGHT).into(),
+                ..default()
+            }),
+            ..default()
+        }))
         .insert_resource(ClearColor(BACHGROUND_COLOR))
         .add_systems(Startup, setup)
-        .add_systems(Update, move_square)
+        .add_systems(Update, (apply_velocity, move_square).chain())
         .run();
 }
