@@ -1,4 +1,19 @@
-use bevy::{prelude::*, window::*};
+use bevy::{
+    math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
+    prelude::*,
+    window::*,
+};
+
+const WINDOW_WIDTH: f32 = 900.;
+const WINDOW_HEIGHT: f32 = 600.;
+const BACHGROUND_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
+const SQUARE_SIDE: f32 = 64.;
+const SQUARE_COLOR: Color = Color::srgb(0.1, 0.1, 1.0);
+const BALL_COLOR: Color = Color::srgb(0.1, 1.0, 0.2);
+const SQUARE_SPEED: f32 = 300.0;
+const BALL_DIAMETER: f32 = 32.0;
+const BALL_DIRECTION: Vec2 = Vec2::new(0.5, -0.5);
+const BALL_SPEED: f32 = 500.0;
 
 #[derive(Component)]
 struct Square;
@@ -6,17 +21,46 @@ struct Square;
 #[derive(Component)]
 struct Ball;
 
+#[derive(Component)]
+struct Collider;
+
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
-const WINDOW_WIDTH: f32 = 900.;
-const WINDOW_HEIGHT: f32 = 600.;
-const BACHGROUND_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
-const SQUARE_COLOR: Color = Color::srgb(0.1, 0.1, 1.0);
-const BALL_COLOR: Color = Color::srgb(0.1, 1.0, 0.2);
-const SQUARE_SPEED: f32 = 100.0;
-const BALL_DIAMETER: f32 = 32.0;
-const BALL_DIRECTION: Vec2 = Vec2::new(0.5, -0.5);
-const BALL_SPEED: f32 = 100.0;
+
+#[derive(Event, Default)]
+struct CollisionEvent;
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+enum Collision {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+// Returns `Some` if `ball` collides with `bounding_box`.
+// The returned `Collision` is the side of `bounding_box` that `ball` hit.
+fn ball_collision(ball: BoundingCircle, bounding_box: Aabb2d) -> Option<Collision> {
+    if !ball.intersects(&bounding_box) {
+        return None;
+    }
+
+    let closest = bounding_box.closest_point(ball.center());
+    let offset = ball.center() - closest;
+    let side = if offset.x.abs() > offset.y.abs() {
+        if offset.x < 0. {
+            Collision::Left
+        } else {
+            Collision::Right
+        }
+    } else if offset.y > 0. {
+        Collision::Top
+    } else {
+        Collision::Bottom
+    };
+
+    Some(side)
+}
 
 fn setup(
     mut commands: Commands,
@@ -32,10 +76,11 @@ fn setup(
         Sprite::from_color(SQUARE_COLOR, Vec2::ONE),
         Transform {
             translation: Vec3::new(0.0, square_y, 0.0),
-            scale: Vec2::new(32.0, 32.0).extend(1.0),
+            scale: Vec2::new(SQUARE_SIDE, SQUARE_SIDE).extend(1.0),
             ..default()
         },
         Square,
+        Collider,
     ));
 
     commands.spawn((
@@ -49,6 +94,33 @@ fn setup(
         Ball,
         Velocity(BALL_DIRECTION.normalize() * BALL_SPEED),
     ));
+}
+
+fn check_for_collisions(
+    mut commands: Commands,
+    ball_query: Single<(&mut Velocity, &Transform), With<Ball>>,
+    collider_query: Query<(Entity, &Transform, Option<&Square>), With<Collider>>,
+    //mut collision_events: EventWriter<CollisionEvent>,
+) {
+    let (mut ball_velocity, ball_transform) = ball_query.into_inner();
+    for (collider_entity, collider_transform, maybe_square) in &collider_query {
+        let collision = ball_collision(
+            BoundingCircle::new(ball_transform.translation.truncate(), BALL_DIAMETER / 2.),
+            Aabb2d::new(
+                collider_transform.translation.truncate(),
+                collider_transform.scale.truncate() / 2.,
+            ),
+        );
+        if let Some(collision) = collision {
+            if maybe_square.is_some() {
+                match collision {
+                    Collision::Left | Collision::Right => ball_velocity.x *= -1.,
+                    Collision::Top | Collision::Bottom => ball_velocity.y *= -1.,
+                }
+                println!("Hit!!");
+            }
+        }
+    }
 }
 
 fn move_square(
@@ -101,6 +173,9 @@ fn main() {
         }))
         .insert_resource(ClearColor(BACHGROUND_COLOR))
         .add_systems(Startup, setup)
-        .add_systems(Update, (apply_velocity, move_square).chain())
+        .add_systems(
+            Update,
+            (apply_velocity, move_square, check_for_collisions).chain(),
+        )
         .run();
 }
