@@ -10,6 +10,7 @@ const BACHGROUND_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
 const SQUARE_SIDE: f32 = 64.;
 const SQUARE_COLOR: Color = Color::srgb(0.1, 0.1, 1.0);
 const BALL_COLOR: Color = Color::srgb(0.1, 1.0, 0.2);
+const BALL_COLOR_02: Color = Color::srgb(1.0, 0.2, 0.2);
 const SQUARE_SPEED: f32 = 300.0;
 const BALL_DIAMETER: f32 = 32.0;
 const BALL_DIRECTION: Vec2 = Vec2::new(0.5, -0.5);
@@ -18,7 +19,7 @@ const BALL_SPEED: f32 = 500.0;
 #[derive(Component)]
 struct Square;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 struct Ball;
 
 #[derive(Component)]
@@ -94,30 +95,48 @@ fn setup(
         Ball,
         Velocity(BALL_DIRECTION.normalize() * BALL_SPEED),
     ));
+    for i in 1..10 {
+        commands.spawn((
+            Mesh2d(meshes.add(Circle::default())),
+            MeshMaterial2d(materials.add(BALL_COLOR_02)),
+            Transform {
+                translation: Vec3::new(100.0 + 100.0 * i as f32, square_y - 40.0 * i as f32, 0.0),
+                scale: Vec2::splat(BALL_DIAMETER).extend(1.0),
+                ..default()
+            },
+            Ball,
+            Velocity(BALL_DIRECTION.normalize() * (BALL_SPEED + 100.) * -1.),
+            Collider,
+        ));
+    }
 }
 
 fn check_for_collisions(
     mut commands: Commands,
-    ball_query: Single<(&mut Velocity, &Transform), With<Ball>>,
-    collider_query: Query<(Entity, &Transform, Option<&Square>), With<Collider>>,
+    mut ball_query: Query<(Entity, &mut Velocity, &Transform), With<Ball>>,
+    collider_query: Query<(Entity, &Transform), With<Collider>>,
     //mut collision_events: EventWriter<CollisionEvent>,
 ) {
-    let (mut ball_velocity, ball_transform) = ball_query.into_inner();
-    for (collider_entity, collider_transform, maybe_square) in &collider_query {
-        let collision = ball_collision(
-            BoundingCircle::new(ball_transform.translation.truncate(), BALL_DIAMETER / 2.),
-            Aabb2d::new(
-                collider_transform.translation.truncate(),
-                collider_transform.scale.truncate() / 2.,
-            ),
-        );
-        if let Some(collision) = collision {
-            if maybe_square.is_some() {
-                match collision {
-                    Collision::Left | Collision::Right => ball_velocity.x *= -1.,
-                    Collision::Top | Collision::Bottom => ball_velocity.y *= -1.,
+    for (ball_entity, mut ball_velocity, ball_transform) in &mut ball_query {
+        for (collider_entity, collider_transform) in &collider_query {
+            if collider_entity != ball_entity {
+                let collision = ball_collision(
+                    BoundingCircle::new(ball_transform.translation.truncate(), BALL_DIAMETER / 2.),
+                    Aabb2d::new(
+                        collider_transform.translation.truncate(),
+                        collider_transform.scale.truncate() / 2.,
+                    ),
+                );
+                if let Some(collision) = collision {
+                    // if maybe_square.is_some() {
+                    match collision {
+                        Collision::Left | Collision::Right => ball_velocity.x *= -1.,
+                        Collision::Top | Collision::Bottom => ball_velocity.y *= -1.,
+                    }
+                    // }
+
+                    println!("Collider Entitty = {:?}", collider_entity);
                 }
-                println!("Hit!!");
             }
         }
     }
